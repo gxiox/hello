@@ -1,0 +1,303 @@
+
+--// Fence Controller
+--// UI + Random Fence + Teleport + Press E
+
+local Players = game:GetService("Players")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local Workspace = game:GetService("Workspace")
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+local running = false
+local delayTime = 0.1
+
+--// UI: สร้างก่อนระบบอื่น
+local oldGui = playerGui:FindFirstChild("FenceController")
+if oldGui then
+    oldGui:Destroy()
+end
+
+local gui = Instance.new("ScreenGui")
+gui.Name = "FenceController"
+gui.ResetOnSpawn = false
+gui.DisplayOrder = 999
+gui.IgnoreGuiInset = true
+gui.Parent = playerGui
+
+local frame = Instance.new("Frame")
+frame.Name = "MainFrame"
+frame.Size = UDim2.fromOffset(290, 225)
+frame.Position = UDim2.new(0.5, -145, 0.35, 0)
+frame.BackgroundColor3 = Color3.fromRGB(24, 24, 32)
+frame.BorderSizePixel = 0
+frame.Active = true
+frame.Parent = gui
+
+Instance.new("UICorner", frame).CornerRadius =
+    UDim.new(0, 12)
+
+local function makeLabel(text, position, size)
+    local label = Instance.new("TextLabel")
+    label.Position = position
+    label.Size = size
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextColor3 = Color3.fromRGB(240, 240, 245)
+    label.Font = Enum.Font.GothamBold
+    label.TextSize = 14
+    label.Parent = frame
+    return label
+end
+
+local function makeButton(text, position, size, color)
+    local button = Instance.new("TextButton")
+    button.Position = position
+    button.Size = size
+    button.BackgroundColor3 = color
+    button.Text = text
+    button.TextColor3 = Color3.new(1, 1, 1)
+    button.Font = Enum.Font.GothamBold
+    button.TextSize = 13
+    button.Parent = frame
+
+    Instance.new("UICorner", button).CornerRadius =
+        UDim.new(0, 7)
+
+    return button
+end
+
+makeLabel(
+    "FENCE CONTROLLER",
+    UDim2.fromOffset(12, 8),
+    UDim2.new(1, -24, 0, 28)
+)
+
+makeLabel(
+    "FAST TELEPORT + E",
+    UDim2.fromOffset(12, 42),
+    UDim2.new(1, -24, 0, 24)
+)
+
+local status = makeLabel(
+    "Status: OFF",
+    UDim2.fromOffset(12, 73),
+    UDim2.new(1, -24, 0, 24)
+)
+
+local targetLabel = makeLabel(
+    "Target: None",
+    UDim2.fromOffset(12, 100),
+    UDim2.new(1, -24, 0, 24)
+)
+
+local startButton = makeButton(
+    "START",
+    UDim2.fromOffset(12, 137),
+    UDim2.new(1, -24, 0, 36),
+    Color3.fromRGB(40, 155, 95)
+)
+
+local closeButton = makeButton(
+    "CLOSE",
+    UDim2.fromOffset(12, 182),
+    UDim2.new(1, -24, 0, 30),
+    Color3.fromRGB(85, 45, 50)
+)
+
+--// ลาก UI
+local UserInputService =
+    game:GetService("UserInputService")
+
+local dragging = false
+local dragStart
+local startPosition
+
+frame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+
+        dragging = true
+        dragStart = input.Position
+        startPosition = frame.Position
+
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and (
+        input.UserInputType == Enum.UserInputType.MouseMovement
+        or input.UserInputType == Enum.UserInputType.Touch
+    ) then
+        local delta = input.Position - dragStart
+
+        frame.Position = UDim2.new(
+            startPosition.X.Scale,
+            startPosition.X.Offset + delta.X,
+            startPosition.Y.Scale,
+            startPosition.Y.Offset + delta.Y
+        )
+    end
+end)
+
+--// เตรียมตำแหน่ง Fence
+local fencesFolder = Workspace
+    :WaitForChild("FateEvent")
+    :WaitForChild("Map")
+    :WaitForChild("Fences")
+
+--// ปรับ Prompt สำหรับเกมของตัวเอง
+local function setupPrompt(obj)
+    if obj:IsA("ProximityPrompt") then
+        obj.HoldDuration = 0
+    end
+end
+
+for _, obj in ipairs(fencesFolder:GetDescendants()) do
+    setupPrompt(obj)
+end
+
+fencesFolder.DescendantAdded:Connect(setupPrompt)
+
+--// ค้นหา Fence และสุ่มลำดับ
+local function getFences()
+    local result = {}
+
+    for _, obj in ipairs(fencesFolder:GetChildren()) do
+        if obj.Name:match("^Fence%d+$") then
+            table.insert(result, obj)
+        end
+    end
+
+    for i = #result, 2, -1 do
+        local j = math.random(1, i)
+        result[i], result[j] = result[j], result[i]
+    end
+
+    return result
+end
+
+--// กด E
+local function pressE()
+    VirtualInputManager:SendKeyEvent(
+        true, Enum.KeyCode.E, false, game
+    )
+
+    task.wait(0.05)
+
+    VirtualInputManager:SendKeyEvent(
+        false, Enum.KeyCode.E, false, game
+    )
+end
+
+--// วาร์ปไป Fence แล้วกด E
+local function moveToFence(fence)
+    local character = player.Character
+    local humanoid = character
+        and character:FindFirstChildOfClass("Humanoid")
+    local root = character
+        and character:FindFirstChild("HumanoidRootPart")
+
+    if not character or not humanoid or not root then
+        return false
+    end
+
+    local part = fence:IsA("BasePart")
+        and fence
+        or fence:FindFirstChildWhichIsA("BasePart", true)
+
+    if not part then
+        return true
+    end
+
+    if not running then
+        return false
+    end
+
+    character:PivotTo(
+        part.CFrame * CFrame.new(0, 0, -3)
+    )
+
+    targetLabel.Text = "Target: " .. fence.Name
+
+    task.wait(0.05)
+
+    if not running then
+        return false
+    end
+
+    pressE()
+    task.wait(delayTime)
+
+    return running
+end
+
+--// START / STOP
+startButton.Activated:Connect(function()
+    if running then
+        running = false
+        status.Text = "Status: STOPPING"
+        return
+    end
+
+    running = true
+    startButton.Text = "STOP"
+    startButton.BackgroundColor3 =
+        Color3.fromRGB(190, 55, 65)
+    status.Text = "Status: RUNNING"
+
+    task.spawn(function()
+        while running do
+            local success, err = pcall(function()
+                local fences = getFences()
+
+                if #fences == 0 then
+                    status.Text = "No fences found"
+                    task.wait(1)
+                    return
+                end
+
+                for _, fence in ipairs(fences) do
+                    if not running then
+                        break
+                    end
+
+                    status.Text = "Status: TELEPORTING"
+
+                    if not moveToFence(fence) then
+                        break
+                    end
+                end
+            end)
+
+            if not success then
+                status.Text = "Error: check console"
+                warn("[Fence Controller]", err)
+                running = false
+            end
+
+            if running then
+                task.wait(0.1)
+            end
+        end
+
+        startButton.Text = "START"
+        startButton.BackgroundColor3 =
+            Color3.fromRGB(40, 155, 95)
+        status.Text = "Status: OFF"
+        running = false
+    end)
+end)
+
+--// CLOSE
+closeButton.Activated:Connect(function()
+    running = false
+    gui:Destroy()
+end)
+
+print("[Fence Controller] UI loaded")
